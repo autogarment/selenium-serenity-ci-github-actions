@@ -1,0 +1,538 @@
+name: UI Automation Tests
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+
+  pull_request:
+    branches:
+      - main
+      - develop
+
+  workflow_dispatch:
+    inputs:
+      test_suite:
+        description: Test suite or Cucumber tags to execute
+        required: true
+        default: "@smoke"
+        type: choice
+        options:
+          - "@smoke"
+          - "@regression"
+          - "@sanity"
+          - "custom"
+
+      custom_tags:
+        description: Custom Cucumber tag expression, used when test_suite is custom
+        required: false
+        default: ""
+        type: string
+
+      browser:
+        description: Browser for execution
+        required: true
+        default: "chrome"
+        type: choice
+        options:
+          - "chrome"
+
+      headless:
+        description: Run browser in headless mode
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ui-tests:
+    name: Run UI Automation Suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+    outputs:
+      pages_verified: ${{ steps.verify_reports.outputs.pages_verified }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure GitHub Pages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: temurin
+          cache: maven
+
+      - name: Set up Chrome browser
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
+      - name: Print environment and runner information
+        shell: bash
+        run: |
+          echo "=========================================="
+          echo "Runner Information"
+          echo "=========================================="
+          echo "OS:         $RUNNER_OS"
+          echo "Arch:       $RUNNER_ARCH"
+          echo "Workspace:  $GITHUB_WORKSPACE"
+          echo "Event:      $GITHUB_EVENT_NAME"
+          echo "Ref:        $GITHUB_REF"
+          echo "Commit:     $GITHUB_SHA"
+
+          echo
+          echo "=========================================="
+          echo "Tool Versions"
+          echo "=========================================="
+          java -version
+          mvn -version
+          google-chrome --version || chrome --version || true
+
+      - name: Resolve and validate test configuration
+        id: test_config
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SOURCE_BRANCH: ${{ github.head_ref || github.ref_name }}
+          TARGET_BRANCH: ${{ github.base_ref }}
+          MANUAL_SUITE: ${{ inputs.test_suite }}
+          MANUAL_CUSTOM_TAGS: ${{ inputs.custom_tags }}
+          MANUAL_BROWSER: ${{ inputs.browser }}
+          MANUAL_HEADLESS: ${{ inputs.headless }}
+        run: |
+          TEST_SUITE="@regression"
+          TEST_TAGS="@regression"
+          BROWSER="chrome"
+          HEADLESS="true"
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            TEST_SUITE="${MANUAL_SUITE:-@smoke}"
+            BROWSER="${MANUAL_BROWSER:-chrome}"
+            HEADLESS="${MANUAL_HEADLESS:-true}"
+
+            if [ "$TEST_SUITE" = "custom" ]; then
+              TEST_TAGS="$MANUAL_CUSTOM_TAGS"
+            else
+              TEST_TAGS="$TEST_SUITE"
+            fi
+          elif [ "$EVENT_NAME" = "pull_request" ]; then
+            TEST_SUITE="@smoke"
+            TEST_TAGS="@smoke"
+          fi
+
+          if [ "$BROWSER" != "chrome" ]; then
+            echo "::error::Unsupported browser: $BROWSER"
+            exit 1
+          fi
+
+          if [ "$HEADLESS" != "true" ] && [ "$HEADLESS" != "false" ]; then
+            echo "::error::Headless must be true or false, but was: $HEADLESS"
+            exit 1
+          fi
+
+          if [ -z "$TEST_TAGS" ]; then
+            echo "::error::Cucumber tag expression must not be empty"
+            exit 1
+          fi
+
+          echo "source_branch=${SOURCE_BRANCH:-N/A}" >> "$GITHUB_OUTPUT"
+          echo "target_branch=${TARGET_BRANCH:-N/A}" >> "$GITHUB_OUTPUT"
+          echo "test_suite=$TEST_SUITE" >> "$GITHUB_OUTPUT"
+          echo "test_tags=$TEST_TAGS" >> "$GITHUB_OUTPUT"
+          echo "browser=$BROWSER" >> "$GITHUB_OUTPUT"
+          echo "headless=$HEADLESS" >> "$GITHUB_OUTPUT"
+
+          echo "=========================================="
+          echo "Resolved Test Configuration"
+          echo "=========================================="
+          echo "Event:          $EVENT_NAME"
+          echo "Source branch:  ${SOURCE_BRANCH:-N/A}"
+          echo "Target branch:  ${TARGET_BRANCH:-N/A}"
+          echo "Test suite:     $TEST_SUITE"
+          echo "Cucumber tags:  $TEST_TAGS"
+          echo "Browser:        $BROWSER"
+          echo "Headless:       $HEADLESS"
+
+      - name: Validate selected Cucumber tags
+        shell: bash
+        env:
+          TEST_TAGS: ${{ steps.test_config.outputs.test_tags }}
+        run: |
+          echo "Selected Cucumber expression: $TEST_TAGS"
+
+          if [[ "$TEST_TAGS" =~ ^@[A-Za-z0-9_-]+$ ]]; then
+            if ! grep -Rqs --include="*.feature" -- "$TEST_TAGS" src/test/resources; then
+              echo "::error::No feature or scenario contains tag: $TEST_TAGS"
+              exit 1
+            fi
+            echo "Simple tag validation passed."
+          else
+            echo "Complex tag expression detected; Cucumber will validate it."
+          fi
+
+      - name: Prepare reporting scripts
+        shell: bash
+        run: |
+          if [ ! -d scripts ]; then
+            echo "::error::The scripts directory does not exist"
+            exit 1
+          fi
+
+          chmod +x scripts/*.sh 2>/dev/null || true
+          find scripts -maxdepth 1 -type f -printf '%f\n' | sort
+
+      - name: Execute UI tests with Maven and Serenity
+        id: selenium_tests
+        continue-on-error: true # Cho phép chạy tiếp các bước sinh báo cáo dù test có failed
+        shell: bash
+        env:
+          TEST_TAGS: ${{ steps.test_config.outputs.test_tags }}
+          TEST_BROWSER: ${{ steps.test_config.outputs.browser }}
+          TEST_HEADLESS: ${{ steps.test_config.outputs.headless }}
+        run: |
+          MAVEN_ARGS=(
+            --batch-mode
+            --no-transfer-progress
+            clean
+            verify
+            -Dcucumber.filter.tags=$TEST_TAGS
+            -Dtags=$TEST_TAGS
+            -Dwebdriver.driver=$TEST_BROWSER
+            -Dheadless=$TEST_HEADLESS
+          )
+          
+          if [ "$TEST_HEADLESS" = "true" ]; then
+            MAVEN_ARGS+=(
+              -Dchrome.switches=--headless=new,--no-sandbox,--disable-dev-shm-usage,--disable-gpu,--window-size=1920,1080
+            )
+          else
+            MAVEN_ARGS+=(
+              -Dchrome.switches=--no-sandbox,--disable-dev-shm-usage,--disable-gpu,--disable-notifications,--disable-popup-blocking,--window-size=1920,1080
+            )
+          fi
+          
+          echo "=== Executing Maven with arguments ==="
+          printf 'Argument: %q\n' "${MAVEN_ARGS[@]}"
+          
+          if [ "$TEST_HEADLESS" = "true" ]; then
+            mvn "${MAVEN_ARGS[@]}"
+          else
+            if ! command -v xvfb-run >/dev/null 2>&1; then
+              echo "::error::xvfb-run is unavailable on this runner"
+              exit 1
+            fi
+          
+            xvfb-run \
+              --auto-servernum \
+              --server-args="-screen 0 1920x1080x24" \
+              mvn "${MAVEN_ARGS[@]}"
+          fi
+
+      - name: Verify JaCoCo output
+        if: always()
+        shell: bash
+        run: |
+          echo "=========================================="
+          echo "JaCoCo Coverage Output"
+          echo "=========================================="
+
+          if [ -f target/jacoco.exec ]; then
+            echo "OK: target/jacoco.exec"
+            ls -lh target/jacoco.exec
+          else
+            echo "::warning::target/jacoco.exec was not generated"
+          fi
+
+          if [ -f target/site/jacoco/index.html ]; then
+            echo "OK: JaCoCo HTML report generated"
+          else
+            echo "::warning::JaCoCo HTML report was not generated"
+          fi
+
+          if [ -f target/site/jacoco/jacoco.xml ]; then
+            echo "OK: JaCoCo XML report generated"
+          else
+            echo "::warning::JaCoCo XML report was not generated"
+          fi
+
+      - name: Apply Serenity bright theme
+        if: always()
+        shell: bash
+        run: |
+          THEME_SCRIPT="scripts/apply-serenity-bright-theme.sh"
+          SERENITY_INDEX="target/site/serenity/index.html"
+
+          if [ ! -f "$SERENITY_INDEX" ]; then
+            echo "::warning::Serenity index was not generated"
+            exit 0
+          fi
+
+          if [ ! -f "$THEME_SCRIPT" ]; then
+            echo "::warning::Bright-theme script was not found: $THEME_SCRIPT"
+            exit 0
+          fi
+
+          chmod +x "$THEME_SCRIPT"
+          "$THEME_SCRIPT" || echo "::warning::Bright-theme script returned an error"
+
+      - name: Generate optional automation reports
+        if: always()
+        shell: bash
+        run: |
+          run_optional_script() {
+            local script_path="$1"
+            local report_name="$2"
+
+            if [ ! -f "$script_path" ]; then
+              echo "SKIPPED: $script_path was not found"
+              return 0
+            fi
+
+            chmod +x "$script_path"
+            "$script_path" || echo "::warning::$report_name generation returned an error"
+          }
+
+          run_optional_script "scripts/generate-allure-report.sh" "Allure report"
+          run_optional_script "scripts/generate-masterthought-report.sh" "Masterthought report"
+          run_optional_script "scripts/generate-dashboard.sh" "Automation dashboard"
+          run_optional_script "scripts/generate-report-portal.sh" "Automation report portal"
+
+      - name: Prepare GitHub Pages website
+        id: prepare_pages
+        if: always()
+        shell: bash
+        run: |
+          PAGES_SCRIPT="scripts/prepare-github-pages.sh"
+
+          if [ ! -f "$PAGES_SCRIPT" ]; then
+            echo "::error::Missing script: $PAGES_SCRIPT"
+            echo "pages_prepared=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          chmod +x "$PAGES_SCRIPT"
+
+          if ! "$PAGES_SCRIPT"; then
+            echo "pages_prepared=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          test -f target/github-pages/index.html
+          test -f target/github-pages/serenity/index.html
+
+          echo "pages_prepared=true" >> "$GITHUB_OUTPUT"
+          echo "GitHub Pages staging website is ready."
+
+      - name: Verify generated reports
+        id: verify_reports
+        if: always()
+        shell: bash
+        run: |
+          SERENITY_DIR="target/site/serenity"
+          
+          find target reports \
+            -maxdepth 6 \
+            -type f \
+            \( -name "index.html" -o -name "serenity-summary.html" -o -name "cucumber.json" \) \
+            2>/dev/null \
+            | sort \
+            || true
+          
+          if [ -f "$SERENITY_DIR/index.html" ]; then
+            echo "serenity_generated=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Serenity report index.html is missing"
+            echo "serenity_generated=false" >> "$GITHUB_OUTPUT"
+          fi
+          
+          if [ -f target/github-pages/index.html ] && \
+             [ -f target/github-pages/serenity/index.html ]; then
+            echo "pages_verified=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::GitHub Pages staging content is incomplete"
+            echo "pages_verified=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish CI job summary
+        if: always()
+        shell: bash
+        env:
+          TEST_OUTCOME: ${{ steps.selenium_tests.outcome }}
+          SERENITY_GENERATED: ${{ steps.verify_reports.outputs.serenity_generated }}
+          PAGES_PREPARED: ${{ steps.prepare_pages.outputs.pages_prepared }}
+          PAGES_VERIFIED: ${{ steps.verify_reports.outputs.pages_verified }}
+          TEST_SUITE: ${{ steps.test_config.outputs.test_suite }}
+          TEST_TAGS: ${{ steps.test_config.outputs.test_tags }}
+          TEST_BROWSER: ${{ steps.test_config.outputs.browser }}
+          TEST_HEADLESS: ${{ steps.test_config.outputs.headless }}
+          SOURCE_BRANCH: ${{ steps.test_config.outputs.source_branch }}
+          TARGET_BRANCH: ${{ steps.test_config.outputs.target_branch }}
+        run: |
+          case "$TEST_OUTCOME" in
+            success) TEST_STATUS="PASSED" ;;
+            failure) TEST_STATUS="FAILED" ;;
+            cancelled) TEST_STATUS="CANCELLED" ;;
+            skipped) TEST_STATUS="SKIPPED" ;;
+            *) TEST_STATUS="${TEST_OUTCOME:-UNKNOWN}" ;;
+          esac
+
+          SHORT_COMMIT="${GITHUB_SHA:0:7}"
+          PAGES_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/serenity/"
+
+          {
+            echo "# UI Automation Test Execution Summary"
+            if [ -f target/site/jacoco/jacoco.xml ]; then
+              JACOCO_STATUS="Generated"
+            else
+              JACOCO_STATUS="Not available"
+            fi
+            echo
+            echo "| Parameter | Details |"
+            echo "|---|---|"
+            echo "| Test result | **$TEST_STATUS** |"
+            echo "| Live Report | [View Serenity Report]($PAGES_URL) |"
+            echo "| Trigger event | \`${{ github.event_name }}\` |"
+            echo "| Source branch | \`${SOURCE_BRANCH:-N/A}\` |"
+            echo "| Target branch | \`${TARGET_BRANCH:-N/A}\` |"
+            echo "| Commit | \`$SHORT_COMMIT\` |"
+            echo "| Test suite | \`${TEST_SUITE:-N/A}\` |"
+            echo "| Cucumber filter | \`${TEST_TAGS:-N/A}\` |"
+            echo "| Browser | \`${TEST_BROWSER:-chrome}\` |"
+            echo "| Headless | \`${TEST_HEADLESS:-true}\` |"
+            echo "| Java | \`21\` |"
+            echo "| Serenity report | \`${SERENITY_GENERATED:-false}\` |"
+            echo "| Pages staging | \`${PAGES_PREPARED:-false}\` |"
+            echo "| Pages verification | \`${PAGES_VERIFIED:-false}\` |"
+            echo "| Actor | \`${{ github.actor }}\` |"
+            echo
+            echo "Full reports and diagnostics are available in the workflow artifacts."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload complete automation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: automation-report-${{ github.run_id }}
+          path: |
+            target/site/serenity/
+            target/allure-results/
+            target/allure-report/
+            target/cucumber-reports/
+            target/cucumber-html-reports/
+            target/github-pages/
+            reports/
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-diagnostics-${{ github.run_id }}
+          path: |
+            target/failsafe-reports/
+            target/surefire-reports/
+            target/cucumber-reports/
+            target/*.log
+            logs/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload GitHub Pages artifact
+        if: >
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          steps.prepare_pages.outputs.pages_prepared == 'true' &&
+          steps.verify_reports.outputs.pages_verified == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          name: github-pages
+          path: target/github-pages
+          retention-days: 1
+
+      - name: Clean up browser processes
+        if: always()
+        shell: bash
+        run: |
+          pkill -f chrome || true
+          pkill -f chromedriver || true
+
+      - name: Enforce final quality gate
+        if: always()
+        shell: bash
+        env:
+          TEST_OUTCOME: ${{ steps.selenium_tests.outcome }}
+          SERENITY_GENERATED: ${{ steps.verify_reports.outputs.serenity_generated }}
+          PAGES_PREPARED: ${{ steps.prepare_pages.outputs.pages_prepared }}
+        run: |
+          FAILED=false
+
+          if [ "$TEST_OUTCOME" != "success" ]; then
+            echo "::error::UI automation tests failed or encountered execution errors"
+            FAILED=true
+          fi
+
+          if [ "$SERENITY_GENERATED" != "true" ]; then
+            echo "::error::Serenity report verification failed"
+            FAILED=true
+          fi
+
+          if [ "$PAGES_PREPARED" != "true" ]; then
+            echo "::error::GitHub Pages staging preparation failed"
+            FAILED=true
+          fi
+
+          if [ "$FAILED" = "true" ]; then
+            exit 1
+          fi
+
+          echo "Quality gate passed successfully."
+
+  deploy-pages:
+    name: Deploy Automation Reports
+    needs:
+      - ui-tests
+
+    if: >
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.ui-tests.result == 'success' &&
+      needs.ui-tests.outputs.pages_verified == 'true'
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy reports to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

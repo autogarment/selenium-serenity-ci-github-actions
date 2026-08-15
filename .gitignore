@@ -1,0 +1,40 @@
+# Maven
+target/
+*.log
+logs/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test runtime
+downloads/
+videos/
+recordings/
+
+# Generated reports
+reports/
+reports/serenity/
+reports/allure/
+reports/masterthought/
+reports/dashboard/
+reports/portal/
+
+# Allure local runtime
+allure-report/
+allure-results/
+
+# Temporary files
+*.tmp
+*.bak

@@ -1,0 +1,273 @@
+/* Bright Serenity dashboard theme — post-processing override only. */
+:root {
+  --qa-green: #24B614;
+  --qa-green-dark: #17810c;
+  --qa-green-soft: #eaf9e7;
+  --qa-blue: #2563eb;
+  --qa-blue-soft: #eff6ff;
+  --qa-cyan-soft: #ecfeff;
+  --qa-red: #dc2626;
+  --qa-red-soft: #fef2f2;
+  --qa-amber: #d97706;
+  --qa-amber-soft: #fffbeb;
+  --qa-slate-950: #0f172a;
+  --qa-slate-700: #334155;
+  --qa-slate-500: #64748b;
+  --qa-border: #dbe4ee;
+  --qa-page: #f5f9fd;
+  --qa-card: #ffffff;
+}
+
+html, body {
+  background: var(--qa-page) !important;
+  color: var(--qa-slate-950) !important;
+}
+
+body {
+  background-image:
+    radial-gradient(circle at 8% 0%, rgba(37,99,235,.10), transparent 30rem),
+    radial-gradient(circle at 100% 8%, rgba(36,182,20,.10), transparent 28rem) !important;
+  background-attachment: fixed !important;
+}
+
+/* Main navigation and report header */
+.navbar,
+.navbar-default,
+.navbar-inverse,
+#top-menu,
+.report-header,
+header {
+  background: linear-gradient(105deg, #ffffff 0%, #eff6ff 52%, #ecfdf5 100%) !important;
+  border-color: var(--qa-border) !important;
+  box-shadow: 0 8px 24px rgba(15,23,42,.08) !important;
+  color: var(--qa-slate-950) !important;
+}
+
+.navbar a,
+.navbar-brand,
+.navbar-nav > li > a,
+.report-header a,
+header a {
+  color: var(--qa-slate-700) !important;
+}
+
+.navbar a:hover,
+.navbar-nav > li > a:hover,
+.navbar-nav > .active > a {
+  color: var(--qa-blue) !important;
+  background: rgba(37,99,235,.08) !important;
+}
+
+/* Generic panels/cards used across Serenity versions */
+.panel,
+.card,
+.widget,
+.summary-panel,
+.story,
+.scenario,
+.test-result,
+.container-fluid > .row > [class*="col-"] > div {
+  border-color: var(--qa-border) !important;
+}
+
+.panel,
+.card,
+.widget,
+.summary-panel {
+  background: rgba(255,255,255,.97) !important;
+  box-shadow: 0 8px 22px rgba(15,23,42,.07) !important;
+}
+
+.panel-heading,
+.card-header,
+.widget-header,
+.table-header {
+  background: linear-gradient(90deg, #f8fbff, #f0fdf4) !important;
+  color: var(--qa-slate-950) !important;
+  border-color: var(--qa-border) !important;
+}
+
+/* Tables */
+table,
+.table {
+  background: var(--qa-card) !important;
+  color: var(--qa-slate-700) !important;
+}
+
+.table > thead > tr > th,
+table thead th {
+  background: #eef5fb !important;
+  color: var(--qa-slate-950) !important;
+  border-color: var(--qa-border) !important;
+}
+
+.table > tbody > tr > td,
+table tbody td {
+  border-color: #e8eef5 !important;
+}
+
+.table-striped > tbody > tr:nth-of-type(odd),
+table tbody tr:nth-child(odd) {
+  background: #fbfdff !important;
+}
+
+.table-hover > tbody > tr:hover,
+table tbody tr:hover {
+  background: #eef8ff !important;
+}
+
+/* Success status: requested canonical green */
+.success,
+.passed,
+.result-success,
+.test-success,
+.badge-success,
+.label-success,
+.bg-success,
+.progress-bar-success,
+span.success,
+span.passed {
+  background-color: var(--qa-green) !important;
+  border-color: var(--qa-green-dark) !important;
+  color: #fff !important;
+}
+
+.text-success,
+.success-text,
+a.success,
+a.passed,
+.status-passed,
+.result-passed {
+  color: var(--qa-green-dark) !important;
+}
+
+/* Keep large pass tiles light instead of dark solid blocks */
+.panel-success,
+.card-success,
+.summary-success,
+[class*="success-summary"],
+[class*="passed-summary"] {
+  background: var(--qa-green-soft) !important;
+  color: var(--qa-green-dark) !important;
+  border-color: #b9e9b2 !important;
+}
+
+.danger,
+.failed,
+.result-failure,
+.test-failure,
+.badge-danger,
+.label-danger,
+.bg-danger,
+.progress-bar-danger {
+  background-color: var(--qa-red) !important;
+  color: #fff !important;
+}
+
+.panel-danger,
+.card-danger,
+.summary-danger {
+  background: var(--qa-red-soft) !important;
+  color: #991b1b !important;
+  border-color: #fecaca !important;
+}
+
+.warning,
+.pending,
+.skipped,
+.ignored,
+.badge-warning,
+.label-warning,
+.bg-warning,
+.progress-bar-warning {
+  background-color: #f59e0b !important;
+  color: #fff !important;
+}
+
+.panel-warning,
+.card-warning,
+.summary-warning {
+  background: var(--qa-amber-soft) !important;
+  color: #92400e !important;
+  border-color: #fde68a !important;
+}
+
+/* Charts and progress tracks */
+.progress {
+  background: #e8eef5 !important;
+  box-shadow: inset 0 1px 2px rgba(15,23,42,.06) !important;
+}
+
+.progress-bar,
+.chart-bar,
+.bar {
+  box-shadow: none !important;
+}
+
+svg text,
+.highcharts-title,
+.highcharts-subtitle,
+.highcharts-axis-labels text,
+.highcharts-legend-item text {
+  fill: var(--qa-slate-700) !important;
+  color: var(--qa-slate-700) !important;
+}
+
+.highcharts-background {
+  fill: transparent !important;
+}
+
+/* Links/buttons */
+a { color: var(--qa-blue); }
+a:hover { color: #1d4ed8; }
+
+.btn-primary,
+.button-primary {
+  background: var(--qa-blue) !important;
+  border-color: #1d4ed8 !important;
+  color: #fff !important;
+}
+
+.btn-default,
+.btn-secondary,
+.button-secondary {
+  background: #fff !important;
+  border-color: var(--qa-border) !important;
+  color: var(--qa-slate-700) !important;
+}
+
+/* Improve screenshots and scenario blocks */
+.screenshot,
+.screenshot-thumbnail,
+img.screenshot {
+  border: 1px solid var(--qa-border) !important;
+  box-shadow: 0 6px 18px rgba(15,23,42,.10) !important;
+  background: #fff !important;
+}
+
+.scenario,
+.test-case,
+.test-result {
+  background: #fff !important;
+  border-radius: 10px !important;
+}
+
+/* Footer and secondary text */
+footer,
+.footer,
+.text-muted,
+.muted {
+  color: var(--qa-slate-500) !important;
+}
+
+/* Avoid black/dark canvases inherited from browser/system mode */
+.modal-content,
+.dropdown-menu,
+.popover,
+.tooltip-inner,
+.tab-content,
+.list-group-item {
+  background-color: #fff !important;
+  color: var(--qa-slate-700) !important;
+  border-color: var(--qa-border) !important;
+}
