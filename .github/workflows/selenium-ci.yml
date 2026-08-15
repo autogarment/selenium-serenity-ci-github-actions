@@ -65,17 +65,11 @@ jobs:
       id-token: write
 
     outputs:
-      pages_verified: ${{ steps.verify_reports.outputs.pages_verified }}
+      pages_verified: ${{ steps.verify_pages.outputs.pages_verified }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Configure GitHub Pages
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -205,52 +199,66 @@ jobs:
 
       - name: Execute UI tests with Maven and Serenity
         id: selenium_tests
-        continue-on-error: true # Cho phép chạy tiếp các bước sinh báo cáo dù test có failed
+        continue-on-error: true
         shell: bash
         env:
           TEST_TAGS: ${{ steps.test_config.outputs.test_tags }}
           TEST_BROWSER: ${{ steps.test_config.outputs.browser }}
           TEST_HEADLESS: ${{ steps.test_config.outputs.headless }}
         run: |
+          set +e
+
           MAVEN_ARGS=(
             --batch-mode
             --no-transfer-progress
             clean
             verify
-            -Dcucumber.filter.tags=$TEST_TAGS
-            -Dtags=$TEST_TAGS
-            -Dwebdriver.driver=$TEST_BROWSER
-            -Dheadless=$TEST_HEADLESS
+            "-Dcucumber.filter.tags=$TEST_TAGS"
+            "-Dtags=$TEST_TAGS"
+            "-Dwebdriver.driver=$TEST_BROWSER"
+            "-Dheadless=$TEST_HEADLESS"
           )
-          
+
           if [ "$TEST_HEADLESS" = "true" ]; then
             MAVEN_ARGS+=(
-              -Dchrome.switches=--headless=new,--no-sandbox,--disable-dev-shm-usage,--disable-gpu,--window-size=1920,1080
+              "-Dchrome.switches=--headless=new,--no-sandbox,--disable-dev-shm-usage,--disable-gpu,--window-size=1920,1080"
             )
           else
             MAVEN_ARGS+=(
-              -Dchrome.switches=--no-sandbox,--disable-dev-shm-usage,--disable-gpu,--disable-notifications,--disable-popup-blocking,--window-size=1920,1080
+              "-Dchrome.switches=--no-sandbox,--disable-dev-shm-usage,--disable-gpu,--disable-notifications,--disable-popup-blocking,--window-size=1920,1080"
             )
           fi
-          
-          echo "=== Executing Maven with arguments ==="
+
+          echo "=========================================="
+          echo "Executing Maven"
+          echo "=========================================="
           printf 'Argument: %q\n' "${MAVEN_ARGS[@]}"
-          
+
           if [ "$TEST_HEADLESS" = "true" ]; then
-            mvn "${MAVEN_ARGS[@]}"
+            mvn "${MAVEN_ARGS[@]}" 2>&1 | tee maven-ci.log
+            MVN_EXIT_CODE=${PIPESTATUS[0]}
           else
             if ! command -v xvfb-run >/dev/null 2>&1; then
-              echo "::error::xvfb-run is unavailable on this runner"
+              echo "::error::xvfb-run is unavailable on this runner" | tee maven-ci.log
               exit 1
             fi
-          
+
             xvfb-run \
               --auto-servernum \
               --server-args="-screen 0 1920x1080x24" \
-              mvn "${MAVEN_ARGS[@]}"
+              mvn "${MAVEN_ARGS[@]}" 2>&1 | tee maven-ci.log
+            MVN_EXIT_CODE=${PIPESTATUS[0]}
           fi
 
+          echo
+          echo "=========================================="
+          echo "Maven exit code: $MVN_EXIT_CODE"
+          echo "=========================================="
+
+          exit "$MVN_EXIT_CODE"
+
       - name: Verify JaCoCo output
+        id: verify_jacoco
         if: always()
         shell: bash
         run: |
@@ -258,7 +266,12 @@ jobs:
           echo "JaCoCo Coverage Output"
           echo "=========================================="
 
+          JACOCO_EXEC=false
+          JACOCO_HTML=false
+          JACOCO_XML=false
+
           if [ -f target/jacoco.exec ]; then
+            JACOCO_EXEC=true
             echo "OK: target/jacoco.exec"
             ls -lh target/jacoco.exec
           else
@@ -266,16 +279,27 @@ jobs:
           fi
 
           if [ -f target/site/jacoco/index.html ]; then
+            JACOCO_HTML=true
             echo "OK: JaCoCo HTML report generated"
           else
             echo "::warning::JaCoCo HTML report was not generated"
           fi
 
           if [ -f target/site/jacoco/jacoco.xml ]; then
+            JACOCO_XML=true
             echo "OK: JaCoCo XML report generated"
           else
             echo "::warning::JaCoCo XML report was not generated"
           fi
+
+          echo "jacoco_exec=$JACOCO_EXEC" >> "$GITHUB_OUTPUT"
+          echo "jacoco_html=$JACOCO_HTML" >> "$GITHUB_OUTPUT"
+          echo "jacoco_xml=$JACOCO_XML" >> "$GITHUB_OUTPUT"
+
+          # Phase 6.0.1 deliberately does not fail the build on coverage.
+          # This project currently keeps framework code under src/test/java,
+          # so the standard JaCoCo report can be empty until coverage scope is
+          # redesigned in Phase 6.0.2.
 
       - name: Apply Serenity bright theme
         if: always()
@@ -319,39 +343,13 @@ jobs:
           run_optional_script "scripts/generate-dashboard.sh" "Automation dashboard"
           run_optional_script "scripts/generate-report-portal.sh" "Automation report portal"
 
-      - name: Prepare GitHub Pages website
-        id: prepare_pages
-        if: always()
-        shell: bash
-        run: |
-          PAGES_SCRIPT="scripts/prepare-github-pages.sh"
-
-          if [ ! -f "$PAGES_SCRIPT" ]; then
-            echo "::error::Missing script: $PAGES_SCRIPT"
-            echo "pages_prepared=false" >> "$GITHUB_OUTPUT"
-            exit 1
-          fi
-
-          chmod +x "$PAGES_SCRIPT"
-
-          if ! "$PAGES_SCRIPT"; then
-            echo "pages_prepared=false" >> "$GITHUB_OUTPUT"
-            exit 1
-          fi
-
-          test -f target/github-pages/index.html
-          test -f target/github-pages/serenity/index.html
-
-          echo "pages_prepared=true" >> "$GITHUB_OUTPUT"
-          echo "GitHub Pages staging website is ready."
-
-      - name: Verify generated reports
+      - name: Verify core generated reports
         id: verify_reports
         if: always()
         shell: bash
         run: |
           SERENITY_DIR="target/site/serenity"
-          
+
           find target reports \
             -maxdepth 6 \
             -type f \
@@ -359,17 +357,65 @@ jobs:
             2>/dev/null \
             | sort \
             || true
-          
+
           if [ -f "$SERENITY_DIR/index.html" ]; then
             echo "serenity_generated=true" >> "$GITHUB_OUTPUT"
+            echo "Serenity report verified."
           else
             echo "::warning::Serenity report index.html is missing"
             echo "serenity_generated=false" >> "$GITHUB_OUTPUT"
           fi
-          
+
+      - name: Prepare GitHub Pages website
+        id: prepare_pages
+        if: >
+          vars.ENABLE_GITHUB_PAGES == 'true' &&
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          steps.selenium_tests.outcome == 'success' &&
+          steps.verify_reports.outputs.serenity_generated == 'true'
+        shell: bash
+        run: |
+          PAGES_SCRIPT="scripts/prepare-github-pages.sh"
+
+          if [ ! -f "$PAGES_SCRIPT" ]; then
+            echo "::warning::Missing script: $PAGES_SCRIPT"
+            echo "pages_prepared=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          chmod +x "$PAGES_SCRIPT"
+
+          if ! "$PAGES_SCRIPT"; then
+            echo "::warning::GitHub Pages staging script failed"
+            echo "pages_prepared=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -f target/github-pages/index.html ] && \
+             [ -f target/github-pages/serenity/index.html ]; then
+            echo "pages_prepared=true" >> "$GITHUB_OUTPUT"
+            echo "GitHub Pages staging website is ready."
+          else
+            echo "::warning::GitHub Pages staging content is incomplete"
+            echo "pages_prepared=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify GitHub Pages staging
+        id: verify_pages
+        if: always()
+        shell: bash
+        run: |
+          if [ "${{ vars.ENABLE_GITHUB_PAGES }}" != "true" ]; then
+            echo "GitHub Pages deployment is disabled for Phase 6.0.1."
+            echo "pages_verified=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           if [ -f target/github-pages/index.html ] && \
              [ -f target/github-pages/serenity/index.html ]; then
             echo "pages_verified=true" >> "$GITHUB_OUTPUT"
+            echo "GitHub Pages staging content verified."
           else
             echo "::warning::GitHub Pages staging content is incomplete"
             echo "pages_verified=false" >> "$GITHUB_OUTPUT"
@@ -381,8 +427,11 @@ jobs:
         env:
           TEST_OUTCOME: ${{ steps.selenium_tests.outcome }}
           SERENITY_GENERATED: ${{ steps.verify_reports.outputs.serenity_generated }}
+          JACOCO_EXEC: ${{ steps.verify_jacoco.outputs.jacoco_exec }}
+          JACOCO_HTML: ${{ steps.verify_jacoco.outputs.jacoco_html }}
+          JACOCO_XML: ${{ steps.verify_jacoco.outputs.jacoco_xml }}
           PAGES_PREPARED: ${{ steps.prepare_pages.outputs.pages_prepared }}
-          PAGES_VERIFIED: ${{ steps.verify_reports.outputs.pages_verified }}
+          PAGES_VERIFIED: ${{ steps.verify_pages.outputs.pages_verified }}
           TEST_SUITE: ${{ steps.test_config.outputs.test_suite }}
           TEST_TAGS: ${{ steps.test_config.outputs.test_tags }}
           TEST_BROWSER: ${{ steps.test_config.outputs.browser }}
@@ -399,20 +448,14 @@ jobs:
           esac
 
           SHORT_COMMIT="${GITHUB_SHA:0:7}"
-          PAGES_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/serenity/"
+          PAGES_ENABLED="${{ vars.ENABLE_GITHUB_PAGES }}"
 
           {
             echo "# UI Automation Test Execution Summary"
-            if [ -f target/site/jacoco/jacoco.xml ]; then
-              JACOCO_STATUS="Generated"
-            else
-              JACOCO_STATUS="Not available"
-            fi
             echo
             echo "| Parameter | Details |"
             echo "|---|---|"
             echo "| Test result | **$TEST_STATUS** |"
-            echo "| Live Report | [View Serenity Report]($PAGES_URL) |"
             echo "| Trigger event | \`${{ github.event_name }}\` |"
             echo "| Source branch | \`${SOURCE_BRANCH:-N/A}\` |"
             echo "| Target branch | \`${TARGET_BRANCH:-N/A}\` |"
@@ -423,6 +466,10 @@ jobs:
             echo "| Headless | \`${TEST_HEADLESS:-true}\` |"
             echo "| Java | \`21\` |"
             echo "| Serenity report | \`${SERENITY_GENERATED:-false}\` |"
+            echo "| JaCoCo exec | \`${JACOCO_EXEC:-false}\` |"
+            echo "| JaCoCo HTML | \`${JACOCO_HTML:-false}\` |"
+            echo "| JaCoCo XML | \`${JACOCO_XML:-false}\` |"
+            echo "| Pages enabled | \`${PAGES_ENABLED:-false}\` |"
             echo "| Pages staging | \`${PAGES_PREPARED:-false}\` |"
             echo "| Pages verification | \`${PAGES_VERIFIED:-false}\` |"
             echo "| Actor | \`${{ github.actor }}\` |"
@@ -437,6 +484,8 @@ jobs:
           name: automation-report-${{ github.run_id }}
           path: |
             target/site/serenity/
+            target/site/jacoco/
+            target/jacoco.exec
             target/allure-results/
             target/allure-report/
             target/cucumber-reports/
@@ -452,6 +501,7 @@ jobs:
         with:
           name: test-diagnostics-${{ github.run_id }}
           path: |
+            maven-ci.log
             target/failsafe-reports/
             target/surefire-reports/
             target/cucumber-reports/
@@ -462,10 +512,12 @@ jobs:
 
       - name: Upload GitHub Pages artifact
         if: >
+          vars.ENABLE_GITHUB_PAGES == 'true' &&
           github.event_name == 'push' &&
           github.ref == 'refs/heads/main' &&
+          steps.selenium_tests.outcome == 'success' &&
           steps.prepare_pages.outputs.pages_prepared == 'true' &&
-          steps.verify_reports.outputs.pages_verified == 'true'
+          steps.verify_pages.outputs.pages_verified == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           name: github-pages
@@ -479,13 +531,12 @@ jobs:
           pkill -f chrome || true
           pkill -f chromedriver || true
 
-      - name: Enforce final quality gate
+      - name: Enforce Phase 6.0.1 quality gate
         if: always()
         shell: bash
         env:
           TEST_OUTCOME: ${{ steps.selenium_tests.outcome }}
           SERENITY_GENERATED: ${{ steps.verify_reports.outputs.serenity_generated }}
-          PAGES_PREPARED: ${{ steps.prepare_pages.outputs.pages_prepared }}
         run: |
           FAILED=false
 
@@ -499,16 +550,12 @@ jobs:
             FAILED=true
           fi
 
-          if [ "$PAGES_PREPARED" != "true" ]; then
-            echo "::error::GitHub Pages staging preparation failed"
-            FAILED=true
-          fi
-
           if [ "$FAILED" = "true" ]; then
+            echo "Review the test-diagnostics artifact and maven-ci.log for the root Maven/Selenium error."
             exit 1
           fi
 
-          echo "Quality gate passed successfully."
+          echo "Phase 6.0.1 quality gate passed successfully."
 
   deploy-pages:
     name: Deploy Automation Reports
@@ -516,6 +563,7 @@ jobs:
       - ui-tests
 
     if: >
+      vars.ENABLE_GITHUB_PAGES == 'true' &&
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
       needs.ui-tests.result == 'success' &&

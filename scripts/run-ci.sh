@@ -3,75 +3,67 @@
 set -uo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-
 BROWSER="${1:-chrome}"
 HEADLESS="${2:-true}"
 TAGS="${3:-@smoke}"
+LOG_FILE="$ROOT/maven-ci.log"
 
 cd "$ROOT"
 
-echo
-echo "========================================"
-echo " Selenium Serenity CI"
-echo "========================================"
-echo "Browser : $BROWSER"
-echo "Headless: $HEADLESS"
-echo "Tags    : $TAGS"
-echo
+printf '\n==========================================\n'
+printf ' Selenium Serenity CI\n'
+printf '==========================================\n'
+printf 'Browser : %s\n' "$BROWSER"
+printf 'Headless: %s\n' "$HEADLESS"
+printf 'Tags    : %s\n' "$TAGS"
+printf '==========================================\n\n'
+
+MAVEN_ARGS=(
+  --batch-mode
+  --no-transfer-progress
+  clean
+  verify
+  "-Dcucumber.filter.tags=$TAGS"
+  "-Dtags=$TAGS"
+  "-Dwebdriver.driver=$BROWSER"
+  "-Dheadless=$HEADLESS"
+)
+
+if [[ "$HEADLESS" == "true" ]]; then
+  MAVEN_ARGS+=(
+    "-Dchrome.switches=--headless=new,--no-sandbox,--disable-dev-shm-usage,--disable-gpu,--window-size=1920,1080"
+  )
+fi
+
+printf 'Maven arguments:\n'
+printf '  %q\n' "${MAVEN_ARGS[@]}"
+printf '\n'
 
 set +e
-
-mvn \
-  --batch-mode \
-  --no-transfer-progress \
-  clean verify \
-  -Dwebdriver.driver="$BROWSER" \
-  -Dheadless="$HEADLESS" \
-  -Dtags="$TAGS" \
-  -Dcucumber.filter.tags="$TAGS"
-
-TEST_EXIT_CODE=$?
-
+mvn "${MAVEN_ARGS[@]}" 2>&1 | tee "$LOG_FILE"
+TEST_EXIT_CODE=${PIPESTATUS[0]}
 set -e
 
-echo
-echo "========================================"
-echo " Report verification"
-echo "========================================"
+printf '\n==========================================\n'
+printf ' Report verification\n'
+printf '==========================================\n'
 
-SERENITY_REPORT="$ROOT/target/site/serenity/index.html"
-JACOCO_REPORT="$ROOT/target/site/jacoco/index.html"
-JACOCO_XML="$ROOT/target/site/jacoco/jacoco.xml"
+check_file() {
+  local path="$1"
+  local label="$2"
 
-if [[ -f "$SERENITY_REPORT" ]]; then
-    echo "OK Serenity:"
-    echo "   $SERENITY_REPORT"
-else
-    echo "WARN Serenity report was not generated"
-fi
+  if [[ -f "$path" ]]; then
+    printf 'OK   %-18s %s\n' "$label" "$path"
+  else
+    printf 'WARN %-18s %s\n' "$label" "$path"
+  fi
+}
 
-if [[ -f "$JACOCO_REPORT" ]]; then
-    echo "OK JaCoCo HTML:"
-    echo "   $JACOCO_REPORT"
-else
-    echo "WARN JaCoCo HTML report was not generated"
-fi
+check_file "$ROOT/target/site/serenity/index.html" "Serenity"
+check_file "$ROOT/target/jacoco.exec" "JaCoCo exec"
+check_file "$ROOT/target/site/jacoco/index.html" "JaCoCo HTML"
+check_file "$ROOT/target/site/jacoco/jacoco.xml" "JaCoCo XML"
+check_file "$LOG_FILE" "Maven log"
 
-if [[ -f "$JACOCO_XML" ]]; then
-    echo "OK JaCoCo XML:"
-    echo "   $JACOCO_XML"
-else
-    echo "WARN JaCoCo XML report was not generated"
-fi
-
-if [[ -f "$ROOT/target/jacoco.exec" ]]; then
-    echo "OK JaCoCo execution data:"
-    echo "   $ROOT/target/jacoco.exec"
-else
-    echo "WARN target/jacoco.exec was not generated"
-fi
-
-echo
-echo "Maven/test exit code: $TEST_EXIT_CODE"
-
+printf '\nMaven/test exit code: %s\n' "$TEST_EXIT_CODE"
 exit "$TEST_EXIT_CODE"

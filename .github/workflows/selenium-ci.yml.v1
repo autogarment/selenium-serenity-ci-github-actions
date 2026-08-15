@@ -401,7 +401,6 @@ jobs:
             echo "| Pages staging | \`${PAGES_PREPARED:-false}\` |"
             echo "| Pages verification | \`${PAGES_VERIFIED:-false}\` |"
             echo "| Actor | \`${{ github.actor }}\` |"
-            echo "| JaCoCo report | \`$JACOCO_STATUS\` |"
             echo
             echo "Full reports and diagnostics are available in the workflow artifacts."
           } >> "$GITHUB_STEP_SUMMARY"

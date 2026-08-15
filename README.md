@@ -3,11 +3,21 @@
 [![UI Automation Tests](https://github.com/OWNER/selenium-basic/actions/workflows/selenium-ci.yml/badge.svg?branch=main)](https://github.com/OWNER/selenium-basic/actions/workflows/selenium-ci.yml)
 ![Java](https://img.shields.io/badge/Java-21-blue) ![Maven](https://img.shields.io/badge/Maven-Build-orange) ![Selenium](https://img.shields.io/badge/Selenium-WebDriver-green) ![Serenity BDD](https://img.shields.io/badge/Serenity-BDD-16a085) ![Cucumber](https://img.shields.io/badge/Cucumber-BDD-23d96c)
 
-Enterprise-style UI automation demo using Java 21, Selenium, Cucumber and Serenity BDD with GitHub Actions and GitHub Pages.
+Enterprise-style UI automation demo using Java 21, Selenium, Cucumber, Serenity BDD, JaCoCo and GitHub Actions.
 
-## Live report
+## Phase 6.0.1 - JaCoCo Coverage
 
-[Open the latest Serenity report](https://autogarment.github.io/selenium-basic/serenity/)
+Phase 6.0.1 adds JaCoCo execution data and report generation without enforcing a coverage threshold yet.
+
+Expected outputs after `mvn clean verify`:
+
+```text
+target/jacoco.exec
+target/site/jacoco/index.html
+target/site/jacoco/jacoco.xml
+```
+
+Important: the current automation framework keeps its Java implementation under `src/test/java`. The standard JaCoCo Maven report normally measures classes from `src/main/java`, so JaCoCo execution data can be generated while the HTML/XML report is empty or unavailable. This is intentionally not a build blocker in Phase 6.0.1. Coverage scope will be refined before SonarQube quality gating in Phase 6.0.2.
 
 ## CI strategy
 
@@ -15,11 +25,27 @@ Enterprise-style UI automation demo using Java 21, Selenium, Cucumber and Sereni
 |---|---|---|---|
 | Pull request | `develop` or `main` | `@smoke` | No |
 | Push | `develop` | `@regression` | No |
-| Push | `main` | `@regression` | Yes |
-| Manual | Selected branch | Selected tags | Only on `main` |
+| Push | `main` | `@regression` | Optional |
+| Manual | Selected branch | Selected tags | Optional on `main` |
 
+GitHub Pages is deliberately excluded from the Phase 6.0.1 quality gate. To enable Pages later, configure the repository Pages source as **GitHub Actions** and create repository variable:
+
+```text
+ENABLE_GITHUB_PAGES=true
+```
+
+If this variable is absent, Pages preparation/deployment is skipped and cannot fail the Selenium/JaCoCo pipeline.
 
 ## Run locally
+
+Recommended CI-compatible command:
+
+```bash
+chmod +x scripts/*.sh
+./scripts/run-ci.sh chrome true @smoke
+```
+
+Equivalent Maven command:
 
 ```bash
 mvn clean verify \
@@ -30,7 +56,26 @@ mvn clean verify \
   -Dchrome.switches="--headless=new,--no-sandbox,--disable-dev-shm-usage,--disable-gpu,--window-size=1920,1080"
 ```
 
-Open `target/site/serenity/index.html`.
+## Reports
+
+The pipeline can produce:
+
+- Serenity BDD report: `target/site/serenity/index.html`
+- JaCoCo execution data: `target/jacoco.exec`
+- JaCoCo HTML report: `target/site/jacoco/index.html`
+- JaCoCo XML report for SonarQube: `target/site/jacoco/jacoco.xml`
+- Optional Allure, Masterthought, dashboard and report portal outputs when their generator scripts exist
+- `maven-ci.log` in the diagnostic artifact when CI execution fails
+
+## Troubleshooting CI failures
+
+When GitHub Actions reports multiple downstream errors, inspect this artifact first:
+
+```text
+test-diagnostics-<run-id>/maven-ci.log
+```
+
+The Maven/Selenium failure is the root cause when Serenity, JaCoCo and other reports are all missing.
 
 ## Documentation
 
@@ -40,21 +85,3 @@ Open `target/site/serenity/index.html`.
 - [Troubleshooting](docs/troubleshooting.md)
 - [Contributing](CONTRIBUTING.md)
 - [Changelog](CHANGELOG.md)
-
-## Reports
-
-The automation pipeline generates:
-
-- Serenity BDD Report
-- Allure Report
-- Masterthought Cucumber Report
-- Automation Dashboard
-- GitHub Pages Report Portal
-- JaCoCo Coverage Report
-
-### JaCoCo
-
-Local report:
-
-```text
-target/site/jacoco/index.html
