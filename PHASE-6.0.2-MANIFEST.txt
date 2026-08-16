@@ -1,0 +1,27 @@
+Phase 6.0.2 - SonarQube Quality Gate
+
+Changed/added files:
+- pom.xml
+- .github/workflows/selenium-ci.yml
+- .gitignore
+- README.md
+- docker-compose.sonar.yml
+- .env.sonar.example
+- docs/phase-6.0.2-sonarqube.md
+- scripts/sonar-start.sh
+- scripts/sonar-wait.sh
+- scripts/sonar-scan.sh
+- scripts/sonar-stop.sh
+- scripts/sonar-reset.sh
+
+Source refactor:
+- src/test/java/com/automation/actions/* -> src/main/java/com/automation/actions/*
+- src/test/java/com/automation/pages/*   -> src/main/java/com/automation/pages/*
+- runners and step definitions remain under src/test/java
+
+Validation performed in packaging environment:
+- pom.xml XML parse: PASS
+- selenium-ci.yml YAML parse: PASS
+- docker-compose.sonar.yml YAML parse: PASS
+- shell syntax (bash -n): PASS
+- Maven execution was not run because Maven is not installed in the packaging container.

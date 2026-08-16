@@ -85,3 +85,30 @@ The Maven/Selenium failure is the root cause when Serenity, JaCoCo and other rep
 - [Troubleshooting](docs/troubleshooting.md)
 - [Contributing](CONTRIBUTING.md)
 - [Changelog](CHANGELOG.md)
+
+## Phase 6.0.2 - SonarQube Quality Gate
+
+Local SonarQube Community environment:
+
+```bash
+cp .env.sonar.example .env.sonar
+./scripts/sonar-start.sh
+```
+
+Create a SonarQube token, then run the complete quality scan:
+
+```bash
+export SONAR_TOKEN='YOUR_TOKEN'
+export TEST_TAGS='@all'
+./scripts/sonar-scan.sh
+```
+
+Outputs used by SonarQube:
+
+```text
+target/site/jacoco/index.html
+target/site/jacoco/jacoco.xml
+target/site/jacoco/jacoco.csv
+```
+
+Full guide: `docs/phase-6.0.2-sonarqube.md`.

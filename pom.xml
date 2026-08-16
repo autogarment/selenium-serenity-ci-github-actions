@@ -6,7 +6,7 @@
 
     <groupId>com.automation</groupId>
     <artifactId>selenium-serenity-ci</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
     <packaging>jar</packaging>
 
     <name>Selenium Serenity CI</name>
@@ -23,12 +23,32 @@
         <maven.surefire.version>3.5.2</maven.surefire.version>
         <maven.failsafe.version>3.5.2</maven.failsafe.version>
         <jacoco.version>0.8.12</jacoco.version>
+        <sonar.maven.plugin.version>5.5.0.6356</sonar.maven.plugin.version>
 
         <tags>@video</tags>
         <webdriver.driver>chrome</webdriver.driver>
         <webdriver.base.url>https://www.saucedemo.com</webdriver.base.url>
         <headless>true</headless>
         <cucumber.filter.tags>@video</cucumber.filter.tags>
+
+        <!-- Phase 6.0.2: SonarQube analysis metadata -->
+        <sonar.projectKey>selenium-serenity-ci</sonar.projectKey>
+        <sonar.projectName>Selenium Serenity CI</sonar.projectName>
+        <sonar.sourceEncoding>UTF-8</sonar.sourceEncoding>
+        <sonar.java.source>21</sonar.java.source>
+        <sonar.coverage.jacoco.xmlReportPaths>
+            ${project.build.directory}/site/jacoco/jacoco.xml
+        </sonar.coverage.jacoco.xmlReportPaths>
+
+        <!-- These are framework plumbing/UI mappings; coverage should focus on reusable action logic. -->
+        <sonar.coverage.exclusions>
+            **/pages/**,
+            **/runners/**,
+            **/steps/**
+        </sonar.coverage.exclusions>
+        <sonar.cpd.exclusions>
+            **/pages/**
+        </sonar.cpd.exclusions>
     </properties>
 
     <dependencyManagement>
@@ -44,11 +64,13 @@
     </dependencyManagement>
 
     <dependencies>
+        <!-- Reusable framework code is now in src/main/java. -->
         <dependency>
             <groupId>net.serenity-bdd</groupId>
             <artifactId>serenity-core</artifactId>
-            <scope>test</scope>
         </dependency>
+
+        <!-- Test-only integration dependencies. -->
         <dependency>
             <groupId>net.serenity-bdd</groupId>
             <artifactId>serenity-cucumber</artifactId>
@@ -86,6 +108,16 @@
     </dependencies>
 
     <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.sonarsource.scanner.maven</groupId>
+                    <artifactId>sonar-maven-plugin</artifactId>
+                    <version>${sonar.maven.plugin.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -114,6 +146,16 @@
                         <goals>
                             <goal>report</goal>
                         </goals>
+                        <configuration>
+                            <formats>
+                                <format>HTML</format>
+                                <format>XML</format>
+                                <format>CSV</format>
+                            </formats>
+                            <excludes>
+                                <exclude>com/automation/pages/**</exclude>
+                            </excludes>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>
@@ -140,6 +182,7 @@
                     <systemPropertyVariables>
                         <cucumber.filter.tags>${cucumber.filter.tags}</cucumber.filter.tags>
                         <webdriver.driver>${webdriver.driver}</webdriver.driver>
+                        <webdriver.base.url>${webdriver.base.url}</webdriver.base.url>
                         <headless>${headless}</headless>
                     </systemPropertyVariables>
                 </configuration>

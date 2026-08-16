@@ -38,3 +38,6 @@ allure-results/
 # Temporary files
 *.tmp
 *.bak
+# SonarQube local runtime
+.env.sonar
+.scannerwork/
