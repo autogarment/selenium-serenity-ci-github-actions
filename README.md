@@ -92,15 +92,21 @@ Local SonarQube Community environment:
 
 ```bash
 cp .env.sonar.example .env.sonar
+systemctl --user restart docker-desktop
+docker compose --env-file .env.sonar -f docker-compose.sonar.yml down
+docker rm -f selenium-serenity-sonarqube \
+  selenium-serenity-sonar-db
 ./scripts/sonar-start.sh
 ```
 
 Create a SonarQube token, then run the complete quality scan:
 
 ```bash
-export SONAR_TOKEN='YOUR_TOKEN'
+####./scripts/sonar-start.sh trước khi chạy scan
+export SONAR_TOKEN='squ_03c8517e7947f362738dcb92da9cfa75990ef643'
 export TEST_TAGS='@all'
 ./scripts/sonar-scan.sh
+
 ```
 
 Outputs used by SonarQube:
